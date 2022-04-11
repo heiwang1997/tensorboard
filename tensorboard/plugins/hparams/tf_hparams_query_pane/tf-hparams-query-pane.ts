@@ -556,11 +556,11 @@ class TfHparamsQueryPane extends LegacyElementMixin(PolymerElement) {
   // Updates the _hparams property from the _experiment property.
   _computeHParams() {
     const result = [];
-    const kNumHParamsToDisplayByDefault = 5;
+    // const kNumHParamsToDisplayByDefault = 5;
     this._experiment.hparamInfos.forEach((anInfo, index) => {
       const hparam = {
         info: anInfo as any,
-        displayed: index < kNumHParamsToDisplayByDefault,
+        displayed: anInfo.hasOwnProperty('diff'), //index < kNumHParamsToDisplayByDefault,
         filter: {} as any,
       };
       if (hparam.info.hasOwnProperty('domainDiscrete')) {

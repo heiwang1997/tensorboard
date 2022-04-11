@@ -28,6 +28,7 @@ py_library(
         "backend_context.py",
         "download_data.py",
         "get_experiment.py",
+        "get_experiment_new.py",
         "hparams_plugin.py",
         "list_metric_evals.py",
         "list_session_groups.py",

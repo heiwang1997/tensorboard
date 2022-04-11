@@ -30,7 +30,7 @@ from tensorboard.plugins.hparams import api_pb2
 from tensorboard.plugins.hparams import backend_context
 from tensorboard.plugins.hparams import download_data
 from tensorboard.plugins.hparams import error
-from tensorboard.plugins.hparams import get_experiment
+from tensorboard.plugins.hparams import get_experiment_new as get_experiment
 from tensorboard.plugins.hparams import list_metric_evals
 from tensorboard.plugins.hparams import list_session_groups
 from tensorboard.plugins.hparams import metadata
@@ -39,6 +39,7 @@ from tensorboard.backend import http_util
 from tensorboard.plugins import base_plugin
 from tensorboard.plugins.scalar import metadata as scalars_metadata
 from tensorboard.util import tb_logging
+from pathlib import Path
 
 
 logger = tb_logging.get_logger()
@@ -68,6 +69,8 @@ class HParamsPlugin(base_plugin.TBPlugin):
             "/experiment": self.get_experiment_route,
             "/session_groups": self.list_session_groups_route,
             "/metric_evals": self.list_metric_evals_route,
+            "/comment_get": self.comment_get_route,
+            "/comment_update": self.comment_update_route,
         }
 
     def is_active(self):
@@ -108,6 +111,8 @@ class HParamsPlugin(base_plugin.TBPlugin):
             raise werkzeug.exceptions.BadRequest(description=str(e))
 
     # ---- /experiment -----------------------------------------------------------
+    # This will be called only once on page loaded, to obtain hyperparameter names.
+    #   We modify it, to also return whether this hparam is modified.
     @wrappers.Request.application
     def get_experiment_route(self, request):
         ctx = plugin_util.context(request.environ)
@@ -117,14 +122,19 @@ class HParamsPlugin(base_plugin.TBPlugin):
             # we must advance the input stream to skip them -- otherwise the next HTTP
             # request will be parsed incorrectly.
             _ = _parse_request_argument(request, api_pb2.GetExperimentRequest)
+            exp_info, ih_info = get_experiment.Handler(ctx, self._context, experiment_id).run()
+            exp_json = json_format.MessageToDict(
+                exp_info,
+                including_default_value_fields=True,
+            )
+            for ih_name in ih_info:
+                for t in exp_json['hparamInfos']:
+                    if t['name'] == ih_name:
+                        t['diff'] = True
+                        break
             return http_util.Respond(
                 request,
-                json_format.MessageToJson(
-                    get_experiment.Handler(
-                        ctx, self._context, experiment_id
-                    ).run(),
-                    including_default_value_fields=True,
-                ),
+                exp_json,
                 "application/json",
             )
         except error.HParamsError as e:
@@ -132,6 +142,8 @@ class HParamsPlugin(base_plugin.TBPlugin):
             raise werkzeug.exceptions.BadRequest(description=str(e))
 
     # ---- /session_groups -------------------------------------------------------
+    # This will be called everytime a filter / new hparams is applied / ticked, so that
+    #   the corresponding values will be queried.
     @wrappers.Request.application
     def list_session_groups_route(self, request):
         ctx = plugin_util.context(request.environ)
@@ -178,6 +190,34 @@ class HParamsPlugin(base_plugin.TBPlugin):
         except error.HParamsError as e:
             logger.error("HParams error: %s" % e)
             raise werkzeug.exceptions.BadRequest(description=str(e))
+
+    # ---- /comment_get ---------------------------------------------------------
+    @wrappers.Request.application
+    def comment_get_route(self, request):
+        sg_name = json.loads(request.data)['name']
+        comment_dir = Path(self._context.tb_context.logdir) / sg_name
+        try:
+            with (comment_dir / "comment.txt").open("r") as f:
+                comment_data = f.read()
+        except FileNotFoundError:
+            comment_data = ""
+        return http_util.Respond(
+            request,
+            json.dumps(
+                {"value": comment_data}
+            ),
+            "application/json",
+        )
+
+    # ---- /comment_update ---------------------------------------------------------
+    @wrappers.Request.application
+    def comment_update_route(self, request):
+        update_info = json.loads(request.data)
+        sg_name = update_info['name']
+        comment_dir = Path(self._context.tb_context.logdir) / sg_name
+        with (comment_dir / "comment.txt").open("w") as f:
+            f.write(update_info['value'])
+        return http_util.Respond(request, json.dumps({}), "application/json",)
 
     def _get_scalars_plugin(self):
         """Tries to get the scalars plugin.

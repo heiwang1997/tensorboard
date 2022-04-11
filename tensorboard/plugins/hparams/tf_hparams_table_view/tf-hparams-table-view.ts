@@ -90,6 +90,20 @@ class TfHparamsTableView extends LegacyElementMixin(
           </template>
         </vaadin-grid-column>
       </template>
+      
+      <vaadin-grid-column flex-grow="2" width="10em" resizable="">
+        <template class="header">
+          <div class="table-header table-cell">
+            Comment
+          </div>
+        </template>
+        <template>
+          <div class="table-cell">
+            <input id="[[item.name]]">
+          </div>
+        </template>
+      </vaadin-grid-column>
+
       <template class="row-details">
         <tf-hparams-session-group-details
           backend="[[backend]]"
@@ -181,6 +195,16 @@ class TfHparamsTableView extends LegacyElementMixin(
         .map((sg) => sessionGroupsByName.get(sg.name))
         .filter(Boolean)
     );
+    // Set callbacks for comment input:
+    this.sessionGroups.forEach((sg: any) => {
+      let elem = this.$$("#" + sg.name.replaceAll('/', '\\/')) as any;
+      (this.backend as any)._sendRequest('comment_get', {'name': sg.name}).then(
+        (data) => elem.value = data.value
+      );
+      elem.onchange = () => {
+        (this.backend as any)._sendRequest('comment_update', {'name': sg.name, 'value': elem.value});
+      }
+    });
   }
   _hparamName = tf_hparams_utils.hparamName;
   _metricName = tf_hparams_utils.metricName;
