@@ -41,6 +41,41 @@ class TfHparamsTableView extends LegacyElementMixin(
           <div class="table-cell">[[item.name]]</div>
         </template>
       </vaadin-grid-column>
+
+      <vaadin-grid-column flex-grow="2" width="10em" resizable="">
+        <template class="header">
+          <div class="table-header table-cell">
+            Comment
+          </div>
+        </template>
+        <template>
+          <div class="table-cell">
+            <input id="[[item.name]]">
+          </div>
+        </template>
+      </vaadin-grid-column>
+
+      <vaadin-grid-column flex-grow="2" width="10em" resizable="">
+        <template class="header">
+          <div class="table-header table-cell">Run Info</div>
+        </template>
+        <template>
+          <div class="table-cell" id="info-[[item.name]]">
+            ...
+          </div>
+        </template>
+      </vaadin-grid-column>
+
+      <vaadin-grid-column flex-grow="0" autoWidth="" resizable="">
+        <template class="header">
+          <div class="table-header table-cell">Done</div>
+        </template>
+        <template>
+          <paper-checkbox class="table-cell" id="done-[[item.name]]">
+          </paper-checkbox>
+        </template>
+      </vaadin-grid-column>
+
       <template is="dom-if" if="[[enableShowMetrics]]">
         <vaadin-grid-column flex-grow="0" autoWidth="" resizable="">
           <template class="header">
@@ -52,6 +87,7 @@ class TfHparamsTableView extends LegacyElementMixin(
           </template>
         </vaadin-grid-column>
       </template>
+
       <template
         is="dom-repeat"
         items="[[visibleSchema.hparamInfos]]"
@@ -90,19 +126,6 @@ class TfHparamsTableView extends LegacyElementMixin(
           </template>
         </vaadin-grid-column>
       </template>
-      
-      <vaadin-grid-column flex-grow="2" width="10em" resizable="">
-        <template class="header">
-          <div class="table-header table-cell">
-            Comment
-          </div>
-        </template>
-        <template>
-          <div class="table-cell">
-            <input id="[[item.name]]">
-          </div>
-        </template>
-      </vaadin-grid-column>
 
       <template class="row-details">
         <tf-hparams-session-group-details
@@ -198,12 +221,22 @@ class TfHparamsTableView extends LegacyElementMixin(
     // Set callbacks for comment input:
     this.sessionGroups.forEach((sg: any) => {
       let elem = this.$$("#" + sg.name.replaceAll('/', '\\/')) as any;
+      let doneElem = this.$$("#done-" + sg.name.replaceAll('/', '\\/')) as any;
+      let infoElem = this.$$("#info-" + sg.name.replaceAll('/', '\\/')) as any;
       (this.backend as any)._sendRequest('comment_get', {'name': sg.name}).then(
-        (data) => elem.value = data.value
+        (data) => {
+          elem.value = data.value;
+          doneElem.checked = data.done
+        }
       );
-      elem.onchange = () => {
-        (this.backend as any)._sendRequest('comment_update', {'name': sg.name, 'value': elem.value});
+      (this.backend as any)._sendRequest('run_info', {'name': sg.name}).then(
+        (data) => infoElem.innerHTML = data.value
+      );
+      let changeFunc = () => {
+        (this.backend as any)._sendRequest('comment_update', {'name': sg.name, 'value': elem.value, 'done': doneElem.checked});
       }
+      elem.onchange = changeFunc;
+      doneElem.onchange = changeFunc;
     });
   }
   _hparamName = tf_hparams_utils.hparamName;

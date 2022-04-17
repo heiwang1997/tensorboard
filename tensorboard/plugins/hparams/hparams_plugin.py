@@ -20,7 +20,8 @@ this plugin.
 
 
 import json
-
+import os
+import time
 
 import werkzeug
 from werkzeug import wrappers
@@ -71,6 +72,7 @@ class HParamsPlugin(base_plugin.TBPlugin):
             "/metric_evals": self.list_metric_evals_route,
             "/comment_get": self.comment_get_route,
             "/comment_update": self.comment_update_route,
+            "/run_info": self.run_info_route,
         }
 
     def is_active(self):
@@ -201,10 +203,11 @@ class HParamsPlugin(base_plugin.TBPlugin):
                 comment_data = f.read()
         except FileNotFoundError:
             comment_data = ""
+        is_done = (comment_dir / "done").exists()
         return http_util.Respond(
             request,
             json.dumps(
-                {"value": comment_data}
+                {"value": comment_data, "done": is_done}
             ),
             "application/json",
         )
@@ -217,7 +220,45 @@ class HParamsPlugin(base_plugin.TBPlugin):
         comment_dir = Path(self._context.tb_context.logdir) / sg_name
         with (comment_dir / "comment.txt").open("w") as f:
             f.write(update_info['value'])
+        if update_info['done']:
+            with (comment_dir / "done").open("w") as f:
+                f.write("1")
+        else:
+            try:
+                os.remove(str(comment_dir / "done"))
+            except OSError:
+                pass
         return http_util.Respond(request, json.dumps({}), "application/json",)
+
+    # ---- /run_info ---------------------------------------------------------
+    @wrappers.Request.application
+    def run_info_route(self, request):
+        sg_name = json.loads(request.data)['name']
+        exp_dir = Path(self._context.tb_context.logdir) / sg_name
+        event_mtimes = [(pth, pth.lstat().st_mtime) for pth in exp_dir.glob("events.out*")]
+        # Sort all events files according to modified time, and take the most recent one.
+        event_mtimes = sorted(event_mtimes, key=lambda t: t[1], reverse=True)[0]
+
+        # Get host name and time differences.
+        hostname = event_mtimes[0].name.split(".")[4]
+        time_diff_hrs = (time.time() - event_mtimes[1]) / 3600
+
+        # Let's see if we have a better displayed name for hosts.
+        try:
+            with open(os.environ['JH_UTIL_DIR'] + "/synch/alternative_paths.json") as f:
+                mapping = json.load(f)
+            hostname = mapping[hostname]["alias"]
+        except Exception:
+            pass
+
+        # Find the newest file
+        return http_util.Respond(
+            request,
+            json.dumps(
+                {"value": f"<strong>{hostname}</strong>({time_diff_hrs:.1f}hrs ago)"}
+            ),
+            "application/json",
+        )
 
     def _get_scalars_plugin(self):
         """Tries to get the scalars plugin.
